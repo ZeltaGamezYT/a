@@ -1,76 +1,59 @@
-# main.py on your T‑Deck
+# main.py – T‑Deck Mini Browser (Tulip CC)
 
-import network
-from MicroWebSrv2 import *
-import urequests
+import tulip
+import tuliprequests
 
-# -- Wi-Fi setup (change SSID/PASSWORD) --
-def do_connect(ssid, pwd):
-    sta = network.WLAN(network.STA_IF)
-    if not sta.isconnected():
-        sta.active(True)
-        sta.connect(ssid, pwd)
-        while not sta.isconnected():
-            pass
-    print('Network config:', sta.ifconfig())
+# — Wi‑Fi Connection —
+tulip.wifi("WildflowerHaus", "wannagetaway")
 
-do_connect('YOUR_SSID', 'YOUR_PASS')
-
-# -- Set up web server --
-mws = MicroWebSrv2()
-
-# Navigation history state
+# — Navigation State —
 history = {'back': [], 'forward': [], 'current': ''}
 
-@mws.route('/', methods=['GET'])
-def index_route(mwsrv, req):
-    html = """<!DOCTYPE html><html><body>
-    <input id="url" placeholder="Enter URL" style="width:60%"/>
-    <button onclick="nav('go')">Go</button>
-    <button onclick="nav('back')">Back</button>
-    <button onclick="nav('forward')">Forward</button>
-    <button onclick="nav('reload')">Reload</button>
-    <div id="view" style="width:100%; height:80vh; overflow:auto; border:1px solid #444;"></div>
-    <script>
-      function nav(cmd) {
-        const url = document.getElementById('url').value;
-        fetch(`/nav?cmd=${cmd}&url=${encodeURIComponent(url)}`)
-          .then(r => r.text()).then(html => {
-            document.getElementById('view').innerHTML = html;
-          });
-      }
-    </script>
-    </body></html>"""
-    req.Response.ReturnOk(html, contentType="text/html")
+# — Draw the UI Frame (URL bar and instructions) —
+def draw_ui():
+    tulip.bg_png("bg.png", 0, 0)  # optional background image
+    tulip.sprite_move(0, 0, 0)  # optional sprite control
+    tulip.text("URL: " + history['current'], 0, 0, 1)
+    tulip.text("[<] Back  [>] Forward  [R] Reload  [G] Go", 0, 12, 1)
 
-@mws.route('/nav')
-def nav_handler(mwsrv, req):
-    params = req.GetQueryParams()
-    cmd = params.get('cmd')
-    url = params.get('url')
-    global history
-
-    if cmd == 'go' and url:
-        history['back'].append(history['current'])
-        history['current'] = url
-        history['forward'].clear()
-    elif cmd == 'back' and history['back']:
-        history['forward'].append(history['current'])
-        history['current'] = history['back'].pop()
-    elif cmd == 'forward' and history['forward']:
-        history['back'].append(history['current'])
-        history['current'] = history['forward'].pop()
-    # 'reload' keeps current URL
-
-    # Fetch fully rendered content from Headless‑Render‑API
-    api_url = f"https://service.headless-render-api.com/{history['current']}"
+# — Fetch & Show Page —
+def load_page():
+    if not history['current']:
+        return
     try:
-        resp = urequests.get(api_url, headers={"X-Prerender-Token": "YOUR_TOKEN_HERE"})
+        resp = tuliprequests.get("https://my-renderer.com/render?url=" + history['current'])
         html = resp.text
+        tulip.text(html[:500], 0, 24, 1, wrap=True)
     except Exception as e:
-        html = f"<h3>Error loading page:</h3><pre>{e}</pre>"
+        tulip.text("Error: " + str(e), 0, 24, 1)
 
-    req.Response.ReturnOk(html, contentType="text/html")
+# — Main Event Loop —
+def run_browser():
+    draw_ui()
+    while True:
+        touch = tulip.touch()
+        if not touch:
+            continue
+        x, y = touch
+        if 0 <= x < 50 and 12 <= y < 24 and history['back']:
+            history['forward'].append(history['current'])
+            history['current'] = history['back'].pop()
+            load_page()
+        elif 60 <= x < 110 and 12 <= y < 24 and history['forward']:
+            history['back'].append(history['current'])
+            history['current'] = history['forward'].pop()
+            load_page()
+        elif 120 <= x < 160 and 12 <= y < 24:
+            load_page()
+        elif 170 <= x < 210 and 12 <= y < 24:
+            # Prompt for URL entry
+            new_url = tulip.input("Enter URL:")
+            if new_url:
+                history['back'].append(history['current'])
+                history['current'] = new_url
+                history['forward'].clear()
+                load_page()
+        draw_ui()
 
-# Start the server
-mws.StartManaged()
+if __name__ == "__main__":
+    run_browser()
